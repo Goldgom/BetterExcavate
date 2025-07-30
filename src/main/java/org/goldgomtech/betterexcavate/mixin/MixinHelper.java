@@ -1,103 +1,39 @@
 package org.goldgomtech.betterexcavate.mixin;
 
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.state.BlockState;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.goldgomtech.betterexcavate.Config;
-
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
- * Mixin 辅助类，用于配置连锁挖掘行为
+ * 这个Mixin用于禁用原版的挖掘等级检查系统
+ * 让我们的自定义硬度系统完全接管挖掘判定
  */
+@Mixin(ItemStack.class)
 public class MixinHelper {
     
-    // 可连锁挖掘的方块集合
-    private static final Set<Block> CHAINABLE_BLOCKS = new HashSet<>(Arrays.asList(
-        // 石头类
-        Blocks.STONE,
-        Blocks.COBBLESTONE,
-        Blocks.DEEPSLATE,
-        Blocks.COBBLED_DEEPSLATE,
+    private static final Logger LOGGER = LoggerFactory.getLogger("BetterExcavate");
+    
+    /**
+     * 禁用原版的isCorrectToolForDrops方法
+     * 这个方法决定工具是否正确，从而影响掉落物和挖掘速度
+     */
+    @Inject(method = "isCorrectToolForDrops", at = @At("HEAD"), cancellable = true)
+    private void onIsCorrectToolForDrops(BlockState blockState, CallbackInfoReturnable<Boolean> cir) {
+        // 如果掉落物控制被禁用，保持原版行为
+        if (!Config.enableDropControl) {
+            return;
+        }
         
-        // 原木类
-        Blocks.OAK_LOG,
-        Blocks.BIRCH_LOG,
-        Blocks.SPRUCE_LOG,
-        Blocks.JUNGLE_LOG,
-        Blocks.ACACIA_LOG,
-        Blocks.DARK_OAK_LOG,
-        Blocks.MANGROVE_LOG,
-        Blocks.CHERRY_LOG,
-        
-        // 矿石类
-        Blocks.COAL_ORE,
-        Blocks.IRON_ORE,
-        Blocks.GOLD_ORE,
-        Blocks.DIAMOND_ORE,
-        Blocks.EMERALD_ORE,
-        Blocks.LAPIS_ORE,
-        Blocks.REDSTONE_ORE,
-        Blocks.COPPER_ORE,
-        
-        // 深层矿石
-        Blocks.DEEPSLATE_COAL_ORE,
-        Blocks.DEEPSLATE_IRON_ORE,
-        Blocks.DEEPSLATE_GOLD_ORE,
-        Blocks.DEEPSLATE_DIAMOND_ORE,
-        Blocks.DEEPSLATE_EMERALD_ORE,
-        Blocks.DEEPSLATE_LAPIS_ORE,
-        Blocks.DEEPSLATE_REDSTONE_ORE,
-        Blocks.DEEPSLATE_COPPER_ORE,
-        
-        // 其他常见方块
-        Blocks.DIRT,
-        Blocks.GRAVEL,
-        Blocks.SAND,
-        Blocks.NETHERRACK,
-        Blocks.END_STONE
-    ));
-    
-    /**
-     * 检查方块是否可以连锁挖掘
-     */
-    public static boolean isChainableBlock(Block block) {
-        return CHAINABLE_BLOCKS.contains(block);
-    }
-    
-    /**
-     * 获取最大连锁挖掘数量
-     */
-    public static int getMaxChainBlocks() {
-        return Config.maxChainBlocks;
-    }
-    
-    /**
-     * 检查是否启用连锁挖掘
-     */
-    public static boolean isChainMiningEnabled() {
-        return Config.enableChainMining;
-    }
-    
-    /**
-     * 检查是否需要正确的工具
-     */
-    public static boolean requireCorrectTool() {
-        return Config.requireCorrectTool;
-    }
-    
-    /**
-     * 检查是否在连锁挖掘时损坏工具
-     */
-    public static boolean damageToolOnChain() {
-        return Config.damageToolOnChain;
-    }
-    
-    /**
-     * 检查是否只对相同方块类型进行连锁挖掘
-     */
-    public static boolean isSameTypeOnly() {
-        return true; // 只挖掘相同类型的方块
+        // 总是返回true，让我们的系统在BlockBreakHandler中处理掉落物控制
+        // 这样原版的挖掘等级检查就被完全绕过了
+        LOGGER.debug("[BetterExcavate] Bypassing vanilla tool correctness check for block: {}", 
+                    blockState.getBlock().getDescriptionId());
+        cir.setReturnValue(true);
     }
 }

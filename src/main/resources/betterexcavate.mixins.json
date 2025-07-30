@@ -2,9 +2,14 @@
   "required": true,
   "minVersion": "0.8",
   "package": "org.goldgomtech.betterexcavate.mixin",
-  "compatibilityLevel": "JAVA_8",
-  "refmap": "BetterExcavate.refmap.json",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "betterexcavate.refmap.json",
   "mixins": [
+    "PlayerMixin",
+    "BlockMixin",
+    "InventoryMixin",
+    "MixinHelper",
+    "DiggerItemMixin"
   ],
   "client": [
   ],

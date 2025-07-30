@@ -5,9 +5,15 @@
   "betterexcavate.jade.tool_hardness_tool": "%s 硬度: §e%s",
   "betterexcavate.jade.tool_hardness_original": "原始硬度: §7%s",
   "betterexcavate.jade.tool_durability": "耐久度: §b%d§7/§b%d §7(磨损 §c%s%%§7)",
+  "betterexcavate.jade.tool_correct": "§a✓ 工具类型正确",
+  "betterexcavate.jade.tool_wrong": "§c✗ 工具类型错误 (速度-%s%%)",
+  "betterexcavate.jade.mining_speed": "挖掘速度: §b%s",
+  "betterexcavate.jade.mining_speed_none": "挖掘速度: §c0.00",
   "betterexcavate.jade.cannot_mine": "§c✗ 此工具无法挖掘",
   "betterexcavate.jade.efficient_mining": "§a✓ 高效挖掘",
   "betterexcavate.jade.normal_mining": "§e✓ 正常挖掘",
   "betterexcavate.jade.slow_mining": "§6✓ 缓慢挖掘",
-  "betterexcavate.jade.surrounding_blocks": "周围相同方块: §c%d"
+  "betterexcavate.jade.slow_mining_no_drops": "§6⚠ 缓慢挖掘 (无掉落物)",
+  "betterexcavate.jade.surrounding_blocks": "周围相同方块: §c%d",
+  "config.jade.plugin_betterexcavate.block_hardness": "显示方块硬度"
 }
