@@ -1,0 +1,13 @@
+{
+  "betterexcavate.jade.unbreakable": "§cUnbreakable Block",
+  "betterexcavate.jade.block_hardness": "Block Hardness: §e%s",
+  "betterexcavate.jade.tool_hardness_hand": "Hand Hardness: §e%s",
+  "betterexcavate.jade.tool_hardness_tool": "%s Hardness: §e%s",
+  "betterexcavate.jade.tool_hardness_original": "Original Hardness: §7%s",
+  "betterexcavate.jade.tool_durability": "Durability: §b%d§7/§b%d §7(§c%s%% §7worn)",
+  "betterexcavate.jade.cannot_mine": "§c✗ Cannot mine with this tool",
+  "betterexcavate.jade.efficient_mining": "§a✓ Efficient mining",
+  "betterexcavate.jade.normal_mining": "§e✓ Normal mining",
+  "betterexcavate.jade.slow_mining": "§6✓ Slow mining",
+  "betterexcavate.jade.surrounding_blocks": "Surrounding identical blocks: §c%d"
+}

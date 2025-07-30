@@ -1,0 +1,13 @@
+{
+  "betterexcavate.jade.unbreakable": "§c不可破坏的方块",
+  "betterexcavate.jade.block_hardness": "方块硬度: §e%s",
+  "betterexcavate.jade.tool_hardness_hand": "手部硬度: §e%s",
+  "betterexcavate.jade.tool_hardness_tool": "%s 硬度: §e%s",
+  "betterexcavate.jade.tool_hardness_original": "原始硬度: §7%s",
+  "betterexcavate.jade.tool_durability": "耐久度: §b%d§7/§b%d §7(磨损 §c%s%%§7)",
+  "betterexcavate.jade.cannot_mine": "§c✗ 此工具无法挖掘",
+  "betterexcavate.jade.efficient_mining": "§a✓ 高效挖掘",
+  "betterexcavate.jade.normal_mining": "§e✓ 正常挖掘",
+  "betterexcavate.jade.slow_mining": "§6✓ 缓慢挖掘",
+  "betterexcavate.jade.surrounding_blocks": "周围相同方块: §c%d"
+}
