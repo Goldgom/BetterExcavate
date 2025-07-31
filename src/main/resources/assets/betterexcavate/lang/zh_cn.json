@@ -15,5 +15,21 @@
   "betterexcavate.jade.slow_mining": "§6✓ 缓慢挖掘",
   "betterexcavate.jade.slow_mining_no_drops": "§6⚠ 缓慢挖掘 (无掉落物)",
   "betterexcavate.jade.surrounding_blocks": "周围相同方块: §c%d",
-  "config.jade.plugin_betterexcavate.block_hardness": "显示方块硬度"
+  "config.jade.plugin_betterexcavate.block_hardness": "显示方块硬度",
+  
+  "betterexcavate.tooltip.tool_hardness": "§e工具硬度: %s",
+  "betterexcavate.tooltip.effective_hardness": "§6有效硬度: %s",
+  "betterexcavate.tooltip.hardness_loss": "§c硬度损失: -%s%%",
+  "betterexcavate.tooltip.max_mineable_hardness": "§a最大可挖掘硬度: %s",
+  "betterexcavate.tooltip.max_slow_mineable_hardness": "§6最大缓慢挖掘硬度: %s",
+  "betterexcavate.tooltip.tool_type": "§b工具类型: %s",
+  "betterexcavate.tooltip.durability_info": "§7耐久度: %d/%d (磨损 §c%s%%§7)",
+  
+  "betterexcavate.tool_type.pickaxe": "镐子",
+  "betterexcavate.tool_type.axe": "斧头",
+  "betterexcavate.tool_type.shovel": "铲子",
+  "betterexcavate.tool_type.hoe": "锄头",
+  "betterexcavate.tool_type.sword": "剑",
+  
+  "message.betterexcavate.cannot_mine": "§c此工具无法挖掘该方块！"
 }

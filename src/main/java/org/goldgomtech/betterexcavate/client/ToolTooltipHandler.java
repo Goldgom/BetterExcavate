@@ -95,14 +95,15 @@ public class ToolTooltipHandler {
             double maxSlowMineableHardness = effectiveHardness * Config.slowMiningHardnessMultiplier;
             Component slowMineableText = Component.translatable("betterexcavate.tooltip.max_slow_mineable_hardness", 
                 String.format("%.2f", maxSlowMineableHardness))
-                .withStyle(ChatFormatting.ORANGE);
+                .withStyle(ChatFormatting.GOLD);
             event.getToolTip().add(slowMineableText);
         }
         
         // 显示工具类型信息
-        String toolType = getToolType(itemName);
-        if (!toolType.isEmpty()) {
-            Component toolTypeText = Component.translatable("betterexcavate.tooltip.tool_type", toolType)
+        String toolTypeKey = getToolType(itemName);
+        if (!toolTypeKey.isEmpty()) {
+            Component toolTypeText = Component.translatable("betterexcavate.tooltip.tool_type", 
+                Component.translatable(toolTypeKey).getString())
                 .withStyle(ChatFormatting.AQUA);
             event.getToolTip().add(toolTypeText);
         }

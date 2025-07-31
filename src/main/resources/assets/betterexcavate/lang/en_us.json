@@ -15,5 +15,21 @@
   "betterexcavate.jade.slow_mining": "§6✓ Slow mining",
   "betterexcavate.jade.slow_mining_no_drops": "§6⚠ Slow mining (no drops)",
   "betterexcavate.jade.surrounding_blocks": "Surrounding identical blocks: §c%d",
-  "config.jade.plugin_betterexcavate.block_hardness": "Show Block Hardness"
+  "config.jade.plugin_betterexcavate.block_hardness": "Show Block Hardness",
+  
+  "betterexcavate.tooltip.tool_hardness": "§eTool Hardness: %s",
+  "betterexcavate.tooltip.effective_hardness": "§6Effective Hardness: %s",
+  "betterexcavate.tooltip.hardness_loss": "§cHardness Loss: -%s%%",
+  "betterexcavate.tooltip.max_mineable_hardness": "§aMax Mineable Hardness: %s",
+  "betterexcavate.tooltip.max_slow_mineable_hardness": "§6Max Slow Mining Hardness: %s",
+  "betterexcavate.tooltip.tool_type": "§bTool Type: %s",
+  "betterexcavate.tooltip.durability_info": "§7Durability: %d/%d (§c%s%% worn§7)",
+  
+  "betterexcavate.tool_type.pickaxe": "Pickaxe",
+  "betterexcavate.tool_type.axe": "Axe",
+  "betterexcavate.tool_type.shovel": "Shovel",
+  "betterexcavate.tool_type.hoe": "Hoe",
+  "betterexcavate.tool_type.sword": "Sword",
+  
+  "message.betterexcavate.cannot_mine": "§cThis tool cannot mine this block!"
 }
