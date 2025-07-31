@@ -21,7 +21,7 @@
   "betterexcavate.tooltip.effective_hardness": "§6有效硬度: %s",
   "betterexcavate.tooltip.hardness_loss": "§c硬度损失: -%s%%",
   "betterexcavate.tooltip.max_mineable_hardness": "§a最大可挖掘硬度: %s",
-  "betterexcavate.tooltip.max_slow_mineable_hardness": "§6最大缓慢挖掘硬度: %s",
+  "betterexcavate.tooltip.max_slow_mineable_hardness": "§6最大可破坏硬度: %s",
   "betterexcavate.tooltip.tool_type": "§b工具类型: %s",
   "betterexcavate.tooltip.durability_info": "§7耐久度: %d/%d (磨损 §c%s%%§7)",
   
