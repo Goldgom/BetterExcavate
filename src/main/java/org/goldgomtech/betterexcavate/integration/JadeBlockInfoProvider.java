@@ -151,14 +151,15 @@ public class JadeBlockInfoProvider {
     
     /**
      * 计算玩家对指定方块的挖掘速度
-     * 参考原版计算逻辑，包括工具效率、状态效果等
+     * 根据配置选择使用原版速度修正或自定义速度计算
      */
     private static float calculateMiningSpeed(Player player, BlockState blockState, ItemStack tool, net.minecraft.world.level.Level level, net.minecraft.core.BlockPos pos) {
-        // 获取基础挖掘速度
-        float destroySpeed = tool.getDestroySpeed(blockState);
-        
         // 获取方块硬度和工具硬度信息
         float blockHardness = blockState.getDestroySpeed(level, pos);
+        
+        if (blockHardness < 0) {
+            return 0.0F; // 不可破坏的方块
+        }
         
         double toolHardness;
         if (tool.isEmpty()) {
@@ -180,6 +181,17 @@ public class JadeBlockInfoProvider {
             effectiveToolHardness = toolHardness * durabilityHardnessMultiplier;
         }
         
+        // 应用错误工具类型的硬度惩罚
+        boolean isWrongTool = false;
+        if (Config.enableWrongToolPenalty && !tool.isEmpty()) {
+            boolean isCorrectTool = Config.isCorrectToolType(tool, blockState);
+            if (!isCorrectTool) {
+                isWrongTool = true;
+                // 错误工具类型时，工具硬度降低20%
+                effectiveToolHardness = effectiveToolHardness * 0.8;
+            }
+        }
+        
         // 检查挖掘模式
         int miningMode = Config.getMiningMode(blockHardness, effectiveToolHardness);
         
@@ -187,49 +199,92 @@ public class JadeBlockInfoProvider {
             return 0.0F; // 无法挖掘
         }
         
-        if (destroySpeed > 1.0F) {
-            // 有工具加速
+        float finalSpeed;
+        
+        if (Config.useCustomSpeedCalculation) {
+            // 使用自定义速度计算
+            finalSpeed = Config.calculateCustomMiningSpeed(effectiveToolHardness, blockHardness);
+        } else {
+            // 使用原版速度修正方法
+            float destroySpeed = tool.getDestroySpeed(blockState);
             
-            // 如果是缓慢挖掘模式，应用速度惩罚
-            if (miningMode == 2) {
-                destroySpeed *= (1.0f - (float)Config.slowMiningSpeedPenalty);
-            }
-            
-            // 检查是否为正确工具类型，如果启用了错误工具惩罚
-            if (Config.enableWrongToolPenalty) {
-                boolean isCorrectTool = Config.isCorrectToolType(tool, blockState);
-                if (!isCorrectTool) {
-                    // 应用错误工具速度惩罚
-                    destroySpeed *= (1.0f - (float)Config.wrongToolSpeedPenalty);
+            // 绕过原版工具类型限制（如果启用）
+            if (Config.bypassVanillaToolRestrictions && !tool.isEmpty()) {
+                float toolSpeed = tool.getDestroySpeed(blockState);
+                if (toolSpeed > destroySpeed) {
+                    destroySpeed = toolSpeed;
                 }
             }
             
-            // 应用耐久度速度惩罚
-            if (Config.enableDurabilitySpeedPenalty && !tool.isEmpty()) {
-                double durabilitySpeedMultiplier = Config.calculateDurabilityPenalty(tool, Config.maxDurabilitySpeedPenalty);
-                destroySpeed *= (float)durabilitySpeedMultiplier;
-            }
+            // 计算硬度比值和速度修正
+            double hardnessRatio = effectiveToolHardness / blockHardness;
+            float speedMultiplier = calculateSpeedMultiplier(hardnessRatio, Config.hardnessMultiplier);
             
-            // TODO: 这里可以添加状态效果的影响，如急迫、挖掘疲劳等
-            // 但需要访问玩家的状态效果，在静态方法中比较复杂
-            
-            // 应用周围方块速度修正（如果启用）
-            if (Config.enableSurroundingBlocksModifier) {
-                float surroundingModifier = calculateSurroundingBlocksModifier(blockState, level, pos);
-                destroySpeed *= surroundingModifier;
-            }
+            finalSpeed = destroySpeed * speedMultiplier;
         }
         
-        // 应用在水中或不在地面上的惩罚
+        // 应用其他修正因子
+        
+        // 缓慢挖掘模式的速度惩罚
+        if (miningMode == 2) {
+            finalSpeed *= (1.0f - (float)Config.slowMiningSpeedPenalty);
+        }
+        
+        // 错误工具类型惩罚（速度惩罚）
+        if (Config.enableWrongToolPenalty && isWrongTool) {
+            finalSpeed *= (1.0f - (float)Config.wrongToolSpeedPenalty);
+        }
+        
+        // 耐久度速度惩罚
+        if (Config.enableDurabilitySpeedPenalty && !tool.isEmpty()) {
+            double durabilitySpeedMultiplier = Config.calculateDurabilityPenalty(tool, Config.maxDurabilitySpeedPenalty);
+            finalSpeed *= (float)durabilitySpeedMultiplier;
+        }
+        
+        // 周围方块速度修正
+        if (Config.enableSurroundingBlocksModifier) {
+            float surroundingModifier = calculateSurroundingBlocksModifier(blockState, level, pos);
+            finalSpeed *= surroundingModifier;
+        }
+        
+        // 原版环境惩罚
         if (player.isEyeInFluid(net.minecraft.tags.FluidTags.WATER) && !net.minecraft.world.item.enchantment.EnchantmentHelper.hasAquaAffinity(player)) {
-            destroySpeed /= 5.0F;
+            finalSpeed /= 5.0F;
         }
         
         if (!player.onGround()) {
-            destroySpeed /= 5.0F;
+            finalSpeed /= 5.0F;
         }
         
-        return destroySpeed;
+        return finalSpeed;
+    }
+    
+    /**
+     * 使用ln()曲线计算挖掘速度修正系数（与InventoryMixin保持一致）
+     */
+    private static float calculateSpeedMultiplier(double hardnessRatio, double multiplier) {
+        // 如果工具硬度足够（比值 >= 倍数），保持原速度或稍微提升
+        if (hardnessRatio >= multiplier) {
+            // 可以稍微提升速度，但不要过分
+            return Math.min(1.0f + (float)(hardnessRatio - multiplier) * 0.1f, 2.0f);
+        }
+        
+        // 如果工具硬度不足，使用ln()曲线急剧降低速度
+        double x = hardnessRatio / multiplier;
+        
+        if (x <= 0.001) {
+            // 极小的比值，几乎无法挖掘
+            return 0.001f;
+        }
+        
+        // 使用修正的ln函数
+        double logValue = Math.log(x * Math.E + 1) / Math.E;
+        
+        // 再应用一个平方来让曲线更陡峭
+        float result = (float)(logValue * logValue);
+        
+        // 确保结果在合理范围内
+        return Math.max(0.001f, Math.min(result, 1.0f));
     }
     
     /**

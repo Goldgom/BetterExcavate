@@ -103,25 +103,46 @@ public class BlockBreakHandler {
             effectiveToolHardness = toolHardness * durabilityHardnessMultiplier;
         }
         
+        // 应用错误工具类型的硬度惩罚
+        if (Config.enableWrongToolPenalty && !tool.isEmpty()) {
+            boolean isCorrectTool = Config.isCorrectToolType(tool, state);
+            if (!isCorrectTool) {
+                // 错误工具类型时，工具硬度降低20%
+                effectiveToolHardness = effectiveToolHardness * 0.8;
+                if (Config.enableDebugLogging) {
+                    LOGGER.info("[BetterExcavate] Wrong tool type detected for {} with {}: reducing tool hardness by 20% (from {} to {})", 
+                        state.getBlock().getDescriptionId(), toolName, 
+                        String.format("%.2f", effectiveToolHardness / 0.8),
+                        String.format("%.2f", effectiveToolHardness));
+                }
+            }
+        }
+        
         // 检查挖掘模式
         int miningMode = Config.getMiningMode(blockHardness, effectiveToolHardness);
         String blockName = state.getBlock().getDescriptionId();
         
         if (miningMode == 0) {
             // 无法挖掘，取消破坏事件
-            LOGGER.info("[BetterExcavate] Block {} too hard for tool {} - cancelling break event! Block hardness: {}, Original tool hardness: {}, Effective tool hardness: {}",
-                    blockName, toolName, blockHardness, toolHardness, effectiveToolHardness);
+            if (Config.enableDebugLogging) {
+                LOGGER.info("[BetterExcavate] Block {} too hard for tool {} - cancelling break event! Block hardness: {}, Original tool hardness: {}, Effective tool hardness: {}",
+                        blockName, toolName, blockHardness, toolHardness, effectiveToolHardness);
+            }
             
             event.setCanceled(true);
             return;
         } else if (miningMode == 1) {
             // 正常挖掘，有掉落物
-            LOGGER.info("[BetterExcavate] Block {} can be properly mined with {} - drops/exp enabled! Block hardness: {}, Original tool hardness: {}, Effective tool hardness: {}",
-                    blockName, toolName, blockHardness, toolHardness, effectiveToolHardness);
+            if (Config.enableDebugLogging) {
+                LOGGER.info("[BetterExcavate] Block {} can be properly mined with {} - drops/exp enabled! Block hardness: {}, Original tool hardness: {}, Effective tool hardness: {}",
+                        blockName, toolName, blockHardness, toolHardness, effectiveToolHardness);
+            }
         } else if (miningMode == 2) {
             // 缓慢挖掘，无掉落物
-            LOGGER.info("[BetterExcavate] Block {} can be slowly mined with {} - no drops/exp! Block hardness: {}, Original tool hardness: {}, Effective tool hardness: {}",
-                    blockName, toolName, blockHardness, toolHardness, effectiveToolHardness);
+            if (Config.enableDebugLogging) {
+                LOGGER.info("[BetterExcavate] Block {} can be slowly mined with {} - no drops/exp! Block hardness: {}, Original tool hardness: {}, Effective tool hardness: {}",
+                        blockName, toolName, blockHardness, toolHardness, effectiveToolHardness);
+            }
             
             // 直接清除掉落物和经验值
             try {
@@ -138,9 +159,13 @@ public class BlockBreakHandler {
                 expField.setAccessible(true);
                 expField.setInt(event, 0);
                 
-                LOGGER.info("[BetterExcavate] Successfully cleared drops and experience for slow mining");
+                if (Config.enableDebugLogging) {
+                    LOGGER.info("[BetterExcavate] Successfully cleared drops and experience for slow mining");
+                }
             } catch (Exception e) {
-                LOGGER.warn("[BetterExcavate] Could not clear drops for slow mining: {}", e.getMessage());
+                if (Config.enableDebugLogging) {
+                    LOGGER.warn("[BetterExcavate] Could not clear drops for slow mining: {}", e.getMessage());
+                }
             }
         }
     }
@@ -271,6 +296,15 @@ public class BlockBreakHandler {
         if (Config.enableDurabilityHardnessPenalty && !tool.isEmpty()) {
             double durabilityHardnessMultiplier = Config.calculateDurabilityPenalty(tool, Config.maxDurabilityHardnessPenalty);
             effectiveToolHardness = toolHardness * durabilityHardnessMultiplier;
+        }
+        
+        // 应用错误工具类型的硬度惩罚
+        if (Config.enableWrongToolPenalty && !tool.isEmpty()) {
+            boolean isCorrectTool = Config.isCorrectToolType(tool, state);
+            if (!isCorrectTool) {
+                // 错误工具类型时，工具硬度降低20%
+                effectiveToolHardness = effectiveToolHardness * 0.8;
+            }
         }
         
         // 检查是否可以挖掘

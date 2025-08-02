@@ -19,6 +19,7 @@ import java.util.List;
 @Mod.EventBusSubscriber(modid = BetterExcavate.MODID, bus = Mod.EventBusSubscriber.Bus.MOD)
 public class Config
 {
+    private static final Logger LOGGER = LoggerFactory.getLogger("BetterExcavate");
     private static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
 
     // Tool hardness configuration
@@ -129,6 +130,33 @@ public class Config
             .comment("Speed penalty when using wrong tool type (0.0 = no penalty, 0.5 = 50% speed reduction)")
             .defineInRange("wrongToolSpeedPenalty", 0.5, 0.0, 1.0);
 
+    // Bypass vanilla tool type restrictions
+    private static final ForgeConfigSpec.BooleanValue BYPASS_VANILLA_TOOL_RESTRICTIONS = BUILDER
+            .comment("Bypass vanilla tool type restrictions and always use the tool's actual mining speed, regardless of tool correctness")
+            .define("bypassVanillaToolRestrictions", true);
+
+    // Custom speed calculation method
+    private static final ForgeConfigSpec.BooleanValue USE_CUSTOM_SPEED_CALCULATION = BUILDER
+            .comment("Use custom speed calculation based on hardness ratio instead of vanilla speed calculation")
+            .define("useCustomSpeedCalculation", true);
+
+    private static final ForgeConfigSpec.ConfigValue<String> SPEED_CALCULATION_METHOD = BUILDER
+            .comment("Speed calculation method: ",
+                    " - 'linear': Speed proportional to hardness ratio (simple and predictable)",
+                    " - 'inverse': Speed inversely proportional to block hardness (realistic but can be extreme)", 
+                    " - 'logarithmic': Logarithmic growth (smooth progression, good balance)",
+                    " - 'exponential': Exponential growth when ratio > 1 (rewards high-tier tools)",
+                    " - 'quadratic': Quadratic curve (smooth penalty for low ratios, moderate boost for high ratios)")
+            .define("speedCalculationMethod", "logarithmic", Config::validateSpeedCalculationMethod);
+
+    private static final ForgeConfigSpec.DoubleValue BASE_MINING_SPEED = BUILDER
+            .comment("Base mining speed for custom calculation (blocks per second)")
+            .defineInRange("baseMiningSpeed", 5.0, 0.1, 50.0);
+
+    private static final ForgeConfigSpec.DoubleValue MAX_SPEED_MULTIPLIER_CUSTOM = BUILDER
+            .comment("Maximum speed multiplier for custom calculation when tool hardness greatly exceeds block hardness")
+            .defineInRange("maxSpeedMultiplierCustom", 3.0, 1.0, 10.0);
+
     // Slow mining without drops feature
     private static final ForgeConfigSpec.BooleanValue ENABLE_SLOW_MINING_WITHOUT_DROPS = BUILDER
             .comment("Enable slow mining without drops when tool hardness is insufficient but within tolerance range")
@@ -141,6 +169,10 @@ public class Config
     private static final ForgeConfigSpec.DoubleValue SLOW_MINING_SPEED_PENALTY = BUILDER
             .comment("Speed penalty for slow mining without drops (0.0 = no penalty, 0.9 = 90% speed reduction)")
             .defineInRange("slowMiningSpeedPenalty", 0.8, 0.0, 1.0);
+
+    private static final ForgeConfigSpec.BooleanValue ENABLE_DEBUG_LOGGING = BUILDER
+            .comment("Enable debug logging for BetterExcavate mod. When disabled, all logs are suppressed for better performance.")
+            .define("enableDebugLogging", false);
 
     static final ForgeConfigSpec SPEC = BUILDER.build();
 
@@ -170,10 +202,22 @@ public class Config
     public static boolean enableWrongToolPenalty;
     public static double wrongToolSpeedPenalty;
 
+    // Bypass vanilla tool type restrictions
+    public static boolean bypassVanillaToolRestrictions;
+
+    // Custom speed calculation
+    public static boolean useCustomSpeedCalculation;
+    public static String speedCalculationMethod;
+    public static double baseMiningSpeed;
+    public static double maxSpeedMultiplierCustom;
+
     // Slow mining without drops feature
     public static boolean enableSlowMiningWithoutDrops;
     public static double slowMiningHardnessMultiplier;
     public static double slowMiningSpeedPenalty;
+    
+    // Debug logging
+    public static boolean enableDebugLogging;
 
     private static boolean validateToolConfig(final Object obj)
     {
@@ -206,6 +250,15 @@ public class Config
             return false;
         }
         return "linear".equals(curveType) || "quadratic".equals(curveType) || "exponential".equals(curveType);
+    }
+
+    private static boolean validateSpeedCalculationMethod(final Object obj)
+    {
+        if (!(obj instanceof String method)) {
+            return false;
+        }
+        return "linear".equals(method) || "inverse".equals(method) || "logarithmic".equals(method) || 
+               "exponential".equals(method) || "quadratic".equals(method);
     }
     
     /**
@@ -437,40 +490,73 @@ public class Config
         net.minecraft.world.level.block.Block block = blockState.getBlock();
         Item tool = itemStack.getItem();
         String toolName = tool.toString().toLowerCase();
+        String blockName = block.toString().toLowerCase();
 
         // 首先检查方块是否有特定的工具要求
         boolean blockHasToolRequirement = hasSpecificToolRequirement(block);
         
         // 如果方块没有特定工具要求，任何工具都是正确的
         if (!blockHasToolRequirement) {
+            LOGGER.debug("[BetterExcavate] Block {} has no specific tool requirement, tool {} is considered correct", 
+                blockName, toolName);
             return true;
         }
 
         // 检查是否为正确的工具类型
+        boolean isCorrect = false;
+        String expectedToolType = "";
+        
         // 镐子适合挖掘石头、矿物、金属类方块
         if (toolName.contains("pickaxe")) {
-            return isPickaxeBlock(block);
+            isCorrect = isPickaxeBlock(block);
+            expectedToolType = "pickaxe";
         }
         // 斧头适合挖掘木质方块
         else if (toolName.contains("axe")) {
-            return isAxeBlock(block);
+            isCorrect = isAxeBlock(block);
+            expectedToolType = "axe";
         }
         // 铲子适合挖掘土、沙、雪等软质方块
         else if (toolName.contains("shovel")) {
-            return isShovelBlock(block);
+            isCorrect = isShovelBlock(block);
+            expectedToolType = "shovel";
         }
         // 锄头适合挖掘农作物相关方块
         else if (toolName.contains("hoe")) {
-            return isHoeBlock(block);
+            isCorrect = isHoeBlock(block);
+            expectedToolType = "hoe";
         }
         // 剑不是专门的挖掘工具，但可以快速破坏植物
         else if (toolName.contains("sword")) {
-            return isSwordBlock(block);
+            isCorrect = isSwordBlock(block);
+            expectedToolType = "sword";
+        }
+        else {
+            // 对于其他工具或非工具物品，如果方块有特定要求但工具不匹配，则为错误
+            isCorrect = false;
+            expectedToolType = "non-mining-tool";
         }
         
-        // 对于其他工具或非工具物品，如果方块有特定要求但工具不匹配，则为错误
-        return false;
+        if (!isCorrect) {
+            // 确定推荐的工具类型
+            String recommendedTool = "";
+            if (isPickaxeBlock(block)) recommendedTool = "pickaxe";
+            else if (isAxeBlock(block)) recommendedTool = "axe";
+            else if (isShovelBlock(block)) recommendedTool = "shovel";
+            else if (isHoeBlock(block)) recommendedTool = "hoe";
+            else if (isSwordBlock(block)) recommendedTool = "sword";
+            
+            LOGGER.debug("[BetterExcavate] Wrong tool type: {} (type: {}) for block {}, recommended: {}", 
+                toolName, expectedToolType, blockName, recommendedTool);
+        } else {
+            LOGGER.debug("[BetterExcavate] Correct tool type: {} (type: {}) for block {}", 
+                toolName, expectedToolType, blockName);
+        }
+        
+        return isCorrect;
     }
+        
+
 
     /**
      * 检查方块是否有特定的工具挖掘要求
@@ -478,9 +564,26 @@ public class Config
      * @return true如果方块有特定工具要求，false如果任何工具都可以
      */
     private static boolean hasSpecificToolRequirement(net.minecraft.world.level.block.Block block) {
-        // 检查是否为有特定工具要求的方块
-        return isPickaxeBlock(block) || isAxeBlock(block) || isShovelBlock(block) || 
-               isHoeBlock(block) || isSwordBlock(block);
+        // 只有明确需要特定工具的方块才返回true
+        // 对于没有明确工具要求的方块（如羊毛、玻璃、海绵等），返回false
+        
+        // 需要镐子的硬质方块
+        if (isPickaxeBlock(block)) return true;
+        
+        // 需要斧头的木质方块  
+        if (isAxeBlock(block)) return true;
+        
+        // 需要铲子的软质方块
+        if (isShovelBlock(block)) return true;
+        
+        // 需要锄头的农作物方块
+        if (isHoeBlock(block)) return true;
+        
+        // 适合剑的植物方块
+        if (isSwordBlock(block)) return true;
+        
+        // 对于其他方块（如羊毛、玻璃、海绵等），认为没有特定工具要求
+        return false;
     }
 
     /**
@@ -499,8 +602,10 @@ public class Config
                block == Blocks.ANDESITE || block == Blocks.GRANITE || block == Blocks.DIORITE ||
                block == Blocks.BLACKSTONE || block == Blocks.BASALT || block == Blocks.NETHERRACK ||
                block == Blocks.END_STONE || block == Blocks.PURPUR_BLOCK ||
-               block.toString().toLowerCase().contains("ore") ||
-               block.toString().toLowerCase().contains("stone") ||
+               block == Blocks.COBBLED_DEEPSLATE || block == Blocks.DEEPSLATE_BRICKS ||
+               block == Blocks.FURNACE || block == Blocks.ANVIL ||
+               (block.toString().toLowerCase().contains("ore") && !block.toString().toLowerCase().contains("coral")) ||
+               (block.toString().toLowerCase().contains("stone") && !block.toString().toLowerCase().contains("redstone")) ||
                block.toString().toLowerCase().contains("concrete");
     }
 
@@ -509,14 +614,17 @@ public class Config
      */
     private static boolean isAxeBlock(net.minecraft.world.level.block.Block block) {
         // 木质方块
-        return block.toString().toLowerCase().contains("log") ||
-               block.toString().toLowerCase().contains("wood") ||
+        return (block.toString().toLowerCase().contains("log") && !block.toString().toLowerCase().contains("clog")) ||
+               (block.toString().toLowerCase().contains("wood") && !block.toString().toLowerCase().contains("redwood")) ||
                block.toString().toLowerCase().contains("plank") ||
                block == Blocks.CHEST || block == Blocks.CRAFTING_TABLE ||
                block == Blocks.BOOKSHELF || block == Blocks.LADDER ||
+               block == Blocks.BARREL || block == Blocks.LOOM ||
+               block == Blocks.COMPOSTER || block == Blocks.LECTERN ||
                block.toString().toLowerCase().contains("fence") ||
                block.toString().toLowerCase().contains("door") ||
-               block.toString().toLowerCase().contains("trapdoor");
+               block.toString().toLowerCase().contains("trapdoor") ||
+               block.toString().toLowerCase().contains("sign");
     }
 
     /**
@@ -525,11 +633,13 @@ public class Config
     private static boolean isShovelBlock(net.minecraft.world.level.block.Block block) {
         // 土、沙、雪等软质方块
         return block == Blocks.DIRT || block == Blocks.GRASS_BLOCK || block == Blocks.COARSE_DIRT ||
+               block == Blocks.PODZOL || block == Blocks.MYCELIUM || block == Blocks.FARMLAND ||
                block == Blocks.SAND || block == Blocks.RED_SAND || block == Blocks.GRAVEL ||
                block == Blocks.CLAY || block == Blocks.SNOW || block == Blocks.SNOW_BLOCK ||
                block == Blocks.SOUL_SAND || block == Blocks.SOUL_SOIL ||
-               block.toString().toLowerCase().contains("dirt") ||
-               block.toString().toLowerCase().contains("sand") ||
+               block == Blocks.MUD || block == Blocks.MUDDY_MANGROVE_ROOTS ||
+               (block.toString().toLowerCase().contains("dirt") && !block.toString().toLowerCase().contains("bedirt")) ||
+               (block.toString().toLowerCase().contains("sand") && !block.toString().toLowerCase().contains("sandstone")) ||
                block.toString().toLowerCase().contains("snow");
     }
 
@@ -557,6 +667,78 @@ public class Config
                block == Blocks.COBWEB || block == Blocks.BAMBOO ||
                block == Blocks.SUGAR_CANE || block == Blocks.CACTUS ||
                block == Blocks.MELON || block == Blocks.PUMPKIN;
+    }
+
+    /**
+     * 计算自定义挖掘速度
+     * @param toolHardness 工具硬度
+     * @param blockHardness 方块硬度
+     * @return 挖掘速度 (方块/秒)
+     */
+    public static float calculateCustomMiningSpeed(double toolHardness, float blockHardness) {
+        if (blockHardness <= 0) {
+            return (float) baseMiningSpeed; // 对于硬度为0的方块，使用基础速度
+        }
+        
+        double hardnessRatio = toolHardness / blockHardness;
+        double speedMultiplier;
+        
+        switch (speedCalculationMethod) {
+            case "linear":
+                // 线性关系：速度与硬度比值成正比
+                speedMultiplier = Math.min(hardnessRatio, maxSpeedMultiplierCustom);
+                break;
+                
+            case "inverse":
+                // 反比关系：速度与方块硬度成反比，与工具硬度成正比
+                speedMultiplier = toolHardness / Math.max(blockHardness, 0.1);
+                speedMultiplier = Math.min(speedMultiplier, maxSpeedMultiplierCustom);
+                break;
+                
+            case "logarithmic":
+                // 对数关系：速度增长随硬度比值对数增长
+                if (hardnessRatio <= 0.001) {
+                    speedMultiplier = 0.01;
+                } else {
+                    speedMultiplier = Math.log(hardnessRatio + 1) / Math.log(2);
+                    speedMultiplier = Math.min(speedMultiplier, maxSpeedMultiplierCustom);
+                }
+                break;
+                
+            case "exponential":
+                // 指数关系：当硬度比值大于1时，速度指数增长
+                if (hardnessRatio >= 1.0) {
+                    speedMultiplier = Math.pow(hardnessRatio, 0.5); // 开方，避免增长过快
+                } else {
+                    speedMultiplier = hardnessRatio * hardnessRatio; // 平方，低硬度时速度下降更快
+                }
+                speedMultiplier = Math.min(speedMultiplier, maxSpeedMultiplierCustom);
+                break;
+                
+            case "quadratic":
+                // 二次关系：平滑的二次曲线
+                if (hardnessRatio >= 1.0) {
+                    // 当硬度足够时，速度适度增长
+                    double excess = hardnessRatio - 1.0;
+                    speedMultiplier = 1.0 + excess * 0.5; // 线性增长，但增长率较低
+                } else {
+                    // 当硬度不足时，速度二次下降
+                    speedMultiplier = hardnessRatio * hardnessRatio;
+                }
+                speedMultiplier = Math.min(speedMultiplier, maxSpeedMultiplierCustom);
+                break;
+                
+            default:
+                // 默认使用对数方法
+                speedMultiplier = Math.log(hardnessRatio + 1) / Math.log(2);
+                speedMultiplier = Math.min(speedMultiplier, maxSpeedMultiplierCustom);
+                break;
+        }
+        
+        // 确保速度不会过低
+        speedMultiplier = Math.max(speedMultiplier, 0.01);
+        
+        return (float) (baseMiningSpeed * speedMultiplier);
     }
 
     /**
@@ -620,9 +802,15 @@ public class Config
         durabilityPenaltyCurve = DURABILITY_PENALTY_CURVE.get();
         enableWrongToolPenalty = ENABLE_WRONG_TOOL_PENALTY.get();
         wrongToolSpeedPenalty = WRONG_TOOL_SPEED_PENALTY.get();
+        bypassVanillaToolRestrictions = BYPASS_VANILLA_TOOL_RESTRICTIONS.get();
+        useCustomSpeedCalculation = USE_CUSTOM_SPEED_CALCULATION.get();
+        speedCalculationMethod = SPEED_CALCULATION_METHOD.get();
+        baseMiningSpeed = BASE_MINING_SPEED.get();
+        maxSpeedMultiplierCustom = MAX_SPEED_MULTIPLIER_CUSTOM.get();
         enableSlowMiningWithoutDrops = ENABLE_SLOW_MINING_WITHOUT_DROPS.get();
         slowMiningHardnessMultiplier = SLOW_MINING_HARDNESS_MULTIPLIER.get();
         slowMiningSpeedPenalty = SLOW_MINING_SPEED_PENALTY.get();
+        enableDebugLogging = ENABLE_DEBUG_LOGGING.get();
         
         // 自动检测工具硬度
         if (autoDetectToolHardness) {

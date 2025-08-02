@@ -44,8 +44,47 @@ public class InventoryMixin {
         
         // 如果方块硬度为-1（如基岩），则无法挖掘
         if (blockHardness < 0) {
-            LOGGER.info("[BetterExcavate] Block {} is unbreakable (hardness: {})", blockName, blockHardness);
+            if (Config.enableDebugLogging) {
+                LOGGER.info("[BetterExcavate] Block {} is unbreakable (hardness: {})", blockName, blockHardness);
+            }
             return; // 保持原版行为
+        }
+        
+        // 根据配置决定是否绕过原版的工具类型限制
+        boolean wasLimitedByVanilla = false;
+        if (Config.bypassVanillaToolRestrictions && !heldItem.isEmpty()) {
+            // 完全绕过原版限制，总是使用工具的真实挖掘速度
+            float toolSpeed = heldItem.getDestroySpeed(blockState);
+            if (toolSpeed > originalSpeed) {
+                // 如果工具速度比原版计算的速度更高，说明原版施加了限制
+                originalSpeed = toolSpeed;
+                wasLimitedByVanilla = true;
+                if (Config.enableDebugLogging) {
+                    LOGGER.info("[BetterExcavate] Bypassing vanilla tool type limitation for {} with {}, using tool speed: {} instead of vanilla speed: {}", 
+                        blockName, heldItem.getItem().toString(), originalSpeed, cir.getReturnValue());
+                }
+            } else if (toolSpeed > 1.0f && originalSpeed == 1.0f) {
+                // 特殊情况：原版强制为1.0但工具本身有挖掘能力
+                originalSpeed = toolSpeed;
+                wasLimitedByVanilla = true;
+                if (Config.enableDebugLogging) {
+                    LOGGER.info("[BetterExcavate] Overriding vanilla forced 1.0 speed for {} with {}, using tool speed: {}", 
+                        blockName, heldItem.getItem().toString(), originalSpeed);
+                }
+            }
+        } else if (!heldItem.isEmpty()) {
+            // 如果不绕过原版限制，只在检测到明显的错误工具惩罚时才调整
+            if (originalSpeed == 1.0f) {
+                float toolSpeed = heldItem.getDestroySpeed(blockState);
+                if (toolSpeed > 1.0f) {
+                    originalSpeed = toolSpeed;
+                    wasLimitedByVanilla = true;
+                    if (Config.enableDebugLogging) {
+                        LOGGER.info("[BetterExcavate] Detected vanilla tool limitation for {} with {}, using tool speed: {} instead of forced 1.0", 
+                            blockName, heldItem.getItem().toString(), originalSpeed);
+                    }
+                }
+            }
         }
         
         double toolHardness;
@@ -72,11 +111,42 @@ public class InventoryMixin {
             effectiveToolHardness = toolHardness * hardnessPenalty;
         }
         
+        // 应用错误工具类型的硬度惩罚
+        boolean isWrongTool = false;
+        if (Config.enableWrongToolPenalty && !heldItem.isEmpty()) {
+            boolean isCorrectTool = Config.isCorrectToolType(heldItem, blockState);
+            if (!isCorrectTool) {
+                isWrongTool = true;
+                // 错误工具类型时，工具硬度降低20%
+                effectiveToolHardness = effectiveToolHardness * 0.8;
+                if (Config.enableDebugLogging) {
+                    LOGGER.info("[BetterExcavate] Wrong tool type detected for {} with {}: reducing tool hardness by 20% (from {} to {})", 
+                        blockName, toolName, 
+                        String.format("%.2f", effectiveToolHardness / 0.8),
+                        String.format("%.2f", effectiveToolHardness));
+                }
+            }
+        }
+        
         // 计算工具硬度与方块硬度的比值
         double hardnessRatio = effectiveToolHardness / blockHardness;
         
-        // 使用ln()曲线计算速度修正系数
-        float speedMultiplier = calculateSpeedMultiplier(hardnessRatio, Config.hardnessMultiplier);
+        // 根据配置选择速度计算方法
+        float finalSpeed;
+        if (Config.useCustomSpeedCalculation) {
+            // 使用自定义速度计算，完全基于硬度计算
+            float customSpeed = Config.calculateCustomMiningSpeed(effectiveToolHardness, blockHardness);
+            if (Config.enableDebugLogging) {
+                LOGGER.info("[BetterExcavate] Using custom speed calculation for {} with {}: {} (method: {}, tool hardness: {}, block hardness: {})", 
+                    blockName, toolName, String.format("%.3f", customSpeed), Config.speedCalculationMethod, 
+                    String.format("%.2f", effectiveToolHardness), String.format("%.2f", blockHardness));
+            }
+            finalSpeed = customSpeed;
+        } else {
+            // 使用原有的基于原版速度的修正方法
+            float speedMultiplier = calculateSpeedMultiplier(hardnessRatio, Config.hardnessMultiplier);
+            finalSpeed = originalSpeed * speedMultiplier;
+        }
         
         // 如果启用了周围方块修正，计算周围方块影响
         float surroundingMultiplier = 1.0f;
@@ -85,7 +155,9 @@ public class InventoryMixin {
             if (targetPos != null) {
                 int identicalBlocks = countIdenticalSurroundingBlocks(blockState, targetPos, player.level());
                 surroundingMultiplier = calculateSurroundingBlocksMultiplier(identicalBlocks);
-                LOGGER.info("[BetterExcavate] Found {} identical surrounding blocks for {}", identicalBlocks, blockName);
+                if (Config.enableDebugLogging) {
+                    LOGGER.info("[BetterExcavate] Found {} identical surrounding blocks for {}", identicalBlocks, blockName);
+                }
             }
         }
         
@@ -95,43 +167,72 @@ public class InventoryMixin {
             durabilitySpeedMultiplier = (float) Config.calculateDurabilityPenalty(heldItem, Config.maxDurabilitySpeedPenalty);
         }
         
-        // 应用速度修正（工具硬度修正 × 周围方块修正 × 耐久度修正）
-        float newSpeed = originalSpeed * speedMultiplier * surroundingMultiplier * durabilitySpeedMultiplier;
+        // 应用错误工具类型惩罚（速度惩罚）
+        float wrongToolMultiplier = 1.0f;
+        if (Config.enableWrongToolPenalty && isWrongTool) {
+            wrongToolMultiplier = 1.0f - (float) Config.wrongToolSpeedPenalty;
+            if (Config.enableDebugLogging) {
+                LOGGER.info("[BetterExcavate] Wrong tool type detected for {} with {}: applying {}% speed penalty (multiplier: {})", 
+                    blockName, toolName, 
+                    String.format("%.0f", Config.wrongToolSpeedPenalty * 100),
+                    String.format("%.3f", wrongToolMultiplier));
+            }
+        }
+        
+        // 应用其他修正因子（周围方块修正、耐久度修正、错误工具修正）
+        float newSpeed = finalSpeed * surroundingMultiplier * durabilitySpeedMultiplier * wrongToolMultiplier;
         
         // 记录挖掘信息
-        if (speedMultiplier < 0.1f) {
-            LOGGER.info("[BetterExcavate] Mining {} with {} (severely limited): Block hardness: {}, Tool hardness: {}, Ratio: {}, Speed multiplier: {}, Surrounding multiplier: {}, Durability multiplier: {}, Original speed: {}, Final speed: {}",
-                    blockName, toolName, 
-                    String.format("%.2f", blockHardness), 
-                    String.format("%.2f", toolHardness), 
-                    String.format("%.2f", hardnessRatio), 
-                    String.format("%.3f", speedMultiplier),
-                    String.format("%.3f", surroundingMultiplier),
-                    String.format("%.3f", durabilitySpeedMultiplier), 
-                    String.format("%.3f", originalSpeed), 
-                    String.format("%.3f", newSpeed));
-        } else if (speedMultiplier < 1.0f || surroundingMultiplier < 1.0f || durabilitySpeedMultiplier < 1.0f) {
-            LOGGER.info("[BetterExcavate] Mining {} with {} (reduced speed): Block hardness: {}, Tool hardness: {}, Ratio: {}, Speed multiplier: {}, Surrounding multiplier: {}, Durability multiplier: {}, Original speed: {}, Final speed: {}",
-                    blockName, toolName, 
-                    String.format("%.2f", blockHardness), 
-                    String.format("%.2f", toolHardness), 
-                    String.format("%.2f", hardnessRatio), 
-                    String.format("%.3f", speedMultiplier),
-                    String.format("%.3f", surroundingMultiplier),
-                    String.format("%.3f", durabilitySpeedMultiplier), 
-                    String.format("%.3f", originalSpeed), 
-                    String.format("%.3f", newSpeed));
-        } else {
-            LOGGER.info("[BetterExcavate] Mining {} with {} (normal speed): Block hardness: {}, Tool hardness: {}, Ratio: {}, Speed multiplier: {}, Surrounding multiplier: {}, Durability multiplier: {}, Original speed: {}, Final speed: {}",
-                    blockName, toolName, 
-                    String.format("%.2f", blockHardness), 
-                    String.format("%.2f", toolHardness), 
-                    String.format("%.2f", hardnessRatio), 
-                    String.format("%.3f", speedMultiplier),
-                    String.format("%.3f", surroundingMultiplier),
-                    String.format("%.3f", durabilitySpeedMultiplier), 
-                    String.format("%.3f", originalSpeed), 
-                    String.format("%.3f", newSpeed));
+        if (Config.enableDebugLogging) {
+            if (Config.useCustomSpeedCalculation) {
+                LOGGER.info("[BetterExcavate] Custom speed calculation for {} with {}: Base speed: {}, Surrounding multiplier: {}, Durability multiplier: {}, Wrong tool multiplier: {}, Final speed: {}",
+                        blockName, toolName, 
+                        String.format("%.3f", finalSpeed),
+                        String.format("%.3f", surroundingMultiplier),
+                        String.format("%.3f", durabilitySpeedMultiplier),
+                        String.format("%.3f", wrongToolMultiplier), 
+                        String.format("%.3f", newSpeed));
+            } else {
+                // 原有的日志记录逻辑
+                float speedMultiplier = finalSpeed / Math.max(originalSpeed, 0.001f);
+                if (speedMultiplier < 0.1f) {
+                    LOGGER.info("[BetterExcavate] Mining {} with {} (severely limited): Block hardness: {}, Tool hardness: {}, Ratio: {}, Speed multiplier: {}, Surrounding multiplier: {}, Durability multiplier: {}, Wrong tool multiplier: {}, Original speed: {}, Final speed: {}",
+                            blockName, toolName, 
+                            String.format("%.2f", blockHardness), 
+                            String.format("%.2f", toolHardness), 
+                            String.format("%.2f", hardnessRatio), 
+                            String.format("%.3f", speedMultiplier),
+                            String.format("%.3f", surroundingMultiplier),
+                            String.format("%.3f", durabilitySpeedMultiplier),
+                            String.format("%.3f", wrongToolMultiplier), 
+                            String.format("%.3f", originalSpeed), 
+                            String.format("%.3f", newSpeed));
+                } else if (speedMultiplier < 1.0f || surroundingMultiplier < 1.0f || durabilitySpeedMultiplier < 1.0f || wrongToolMultiplier < 1.0f) {
+                    LOGGER.info("[BetterExcavate] Mining {} with {} (reduced speed): Block hardness: {}, Tool hardness: {}, Ratio: {}, Speed multiplier: {}, Surrounding multiplier: {}, Durability multiplier: {}, Wrong tool multiplier: {}, Original speed: {}, Final speed: {}",
+                            blockName, toolName, 
+                            String.format("%.2f", blockHardness), 
+                            String.format("%.2f", toolHardness), 
+                            String.format("%.2f", hardnessRatio), 
+                            String.format("%.3f", speedMultiplier),
+                            String.format("%.3f", surroundingMultiplier),
+                            String.format("%.3f", durabilitySpeedMultiplier),
+                            String.format("%.3f", wrongToolMultiplier), 
+                            String.format("%.3f", originalSpeed), 
+                            String.format("%.3f", newSpeed));
+                } else {
+                    LOGGER.info("[BetterExcavate] Mining {} with {} (normal speed): Block hardness: {}, Tool hardness: {}, Ratio: {}, Speed multiplier: {}, Surrounding multiplier: {}, Durability multiplier: {}, Wrong tool multiplier: {}, Original speed: {}, Final speed: {}",
+                            blockName, toolName, 
+                            String.format("%.2f", blockHardness), 
+                            String.format("%.2f", toolHardness), 
+                            String.format("%.2f", hardnessRatio), 
+                            String.format("%.3f", speedMultiplier),
+                            String.format("%.3f", surroundingMultiplier),
+                            String.format("%.3f", durabilitySpeedMultiplier),
+                            String.format("%.3f", wrongToolMultiplier), 
+                            String.format("%.3f", originalSpeed), 
+                            String.format("%.3f", newSpeed));
+                }
+            }
         }
         
         cir.setReturnValue(newSpeed);
